@@ -8,7 +8,9 @@ from rx.scheduler.eventloop import AsyncIOScheduler
 
 import cozmo
 
-import programs
+import importlib.util
+import sys
+import os
 
 
 def run(main, drivers, **kwargs):
@@ -40,17 +42,21 @@ def make_cozmo_driver(**kwargs):
                     if type(command["value"]) is dict:
                         if "in_parallel" in command["value"]:
                             logging.warning(
-                                'Overwriting "in_parallel" field to "True"')
+                                'Overwriting "in_parallel" field to "True"'
+                            )
                             command["value"]["in_parallel"] = True
                         command["value"]["in_parallel"] = True
                         action_handlers[command["name"]] = factory(
-                            **command["value"])
+                            **command["value"]
+                        )
                     elif type(command["value"]) is list:
                         action_handlers[command["name"]] = factory(
-                            **command["value"], in_parallel=True)
+                            **command["value"], in_parallel=True
+                        )
                     else:
                         action_handlers[command["name"]] = factory(
-                            command["value"], in_parallel=True)
+                            command["value"], in_parallel=True
+                        )
 
                     if "id" in command:
                         action_handlers[command["name"]].id = command["id"]
@@ -59,43 +65,62 @@ def make_cozmo_driver(**kwargs):
 
                     def on_complete_cb(evt, **kwargs):
                         observer.on_next(
-                            dict({
-                                "id": action_handlers[command["name"]].id,
-                                "evt": evt
-                            }, **kwargs))
+                            dict(
+                                {
+                                    "id": action_handlers[command["name"]].id,
+                                    "evt": evt,
+                                },
+                                **kwargs,
+                            )
+                        )
+
                     action_handlers[command["name"]].add_event_handler(
-                        cozmo.action.EvtActionCompleted,
-                        on_complete_cb
+                        cozmo.action.EvtActionCompleted, on_complete_cb
                     )
                 elif command["type"] == "abort":
                     if action_handlers[command["name"]].is_running:
-                        if "id" in command and "id" in action_handlers and command["id"] is not action_handlers["id"]:
+                        if (
+                            "id" in command
+                            and "id" in action_handlers
+                            and command["id"] is not action_handlers["id"]
+                        ):
                             logging.warning(
-                                f'Action id does not match {action_handlers["id"]} {command["id"]}')
+                                f'Action id does not match {action_handlers["id"]} {command["id"]}'
+                            )
                             return
                         action_handlers[command["name"]].abort()
                     else:
                         logging.warning(
-                            f'Action {command["name"]} is not running')
+                            f'Action {command["name"]} is not running'
+                        )
                 else:
                     logging.warning('Unknown command["type"]', command["type"])
 
             sink.subscribe(on_next=on_next, scheduler=scheduler)
+
         source = rx.create(subscribe)
         return source
 
     return cozmo_driver
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     scheduler = AsyncIOScheduler(loop=loop)
 
-    drivers = {
-        "Cozmo": make_cozmo_driver(scheduler=scheduler)
-    }
+    drivers = {"Cozmo": make_cozmo_driver(scheduler=scheduler)}
 
-    run(programs.main, drivers, scheduler=scheduler)
+    spec = importlib.util.spec_from_file_location(
+        "program",
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else os.path.join(
+            ".", "examples", "tutorials_01_basics_01_hello_world.py"
+        ),
+    )
+    program = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(program)
+    run(program.main, drivers, scheduler=scheduler)
 
     try:
         loop.run_forever()
