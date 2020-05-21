@@ -1,4 +1,4 @@
-# cozmo_apps
+# rxpy-cozmo
 
 ## Getting Started
 
